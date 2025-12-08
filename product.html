@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Product Details - E-Commerce Store</title>
+    <link rel="stylesheet" href="./style.css">
+    <style>
+        .product-details-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 3rem;
+            margin-top: 2rem;
+        }
+        .product-image-container {
+            position: relative;
+        }
+        .product-main-image {
+            width: 100%;
+            aspect-ratio: 1;
+            object-fit: cover;
+            border-radius: 0.5rem;
+            background: var(--gray-200);
+        }
+        .product-info-section {
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+        .product-name {
+            font-size: 2rem;
+            font-weight: bold;
+            color: var(--gray-900);
+        }
+        .product-price-large {
+            font-size: 2rem;
+            font-weight: bold;
+            color: var(--primary);
+        }
+        .product-details-text {
+            color: var(--gray-700);
+            line-height: 1.8;
+        }
+        .back-link {
+            display: inline-block;
+            margin-bottom: 1rem;
+            color: var(--primary);
+            text-decoration: none;
+            font-weight: 500;
+        }
+        .back-link:hover {
+            text-decoration: underline;
+        }
+        @media (max-width: 768px) {
+            .product-details-container {
+                grid-template-columns: 1fr;
+                gap: 2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <div class="header-content">
+                <a href="index.html" class="logo">E-Commerce Store</a>
+                <div class="header-actions">
+                    <a href="index.html" class="btn btn-secondary btn-sm">Back to Store</a>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="container" style="padding-top: 2rem; padding-bottom: 2rem;">
+        <a href="index.html" class="back-link">← Back to Products</a>
+
+        <!-- Loading State -->
+        <div id="loading" class="loading">
+            <div class="spinner"></div>
+            <p style="margin-top: 1rem;">Loading product...</p>
+        </div>
+
+        <!-- Error Message -->
+        <div id="error-message" class="alert alert-error hidden"></div>
+
+        <!-- Product Details -->
+        <div id="product-container" class="hidden">
+            <div class="product-details-container">
+                <!-- Product Image -->
+                <div class="product-image-container">
+                    <img 
+                        id="product-image" 
+                        class="product-main-image" 
+                        alt="Product image"
+                        loading="eager"
+                    >
+                </div>
+
+                <!-- Product Info -->
+                <div class="product-info-section">
+                    <h1 id="product-name" class="product-name"></h1>
+                    <p id="product-price" class="product-price-large"></p>
+                    <p id="product-details" class="product-details-text"></p>
+                    
+                    <div id="product-colors-section">
+                        <h3 style="font-size: 1rem; font-weight: 600; margin-bottom: 0.5rem;">Available Colors:</h3>
+                        <div id="product-colors" class="color-swatches"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Not Found -->
+        <div id="not-found" class="hidden" style="text-align: center; padding: 3rem;">
+            <h2 style="margin-bottom: 1rem;">Product Not Found</h2>
+            <p style="color: var(--gray-500); margin-bottom: 1.5rem;">The product you're looking for doesn't exist or is no longer available.</p>
+            <a href="index.html" class="btn btn-primary">Back to Store</a>
+        </div>
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2024 E-Commerce Store. All rights reserved.</p>
+        </div>
+    </footer>
+
+    <script src="./config.js"></script>
+    <script type="module">
+        import { initSupabase } from './config.js';
+        import { getProduct } from './products.js';
+        import { formatPrice } from './utils.js';
+
+        // Initialize Supabase
+        await initSupabase();
+
+        // Get product ID from URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const productId = urlParams.get('id');
+
+        // DOM Elements
+        const loadingEl = document.getElementById('loading');
+        const errorMessage = document.getElementById('error-message');
+        const productContainer = document.getElementById('product-container');
+        const notFound = document.getElementById('not-found');
+        const productImage = document.getElementById('product-image');
+        const productName = document.getElementById('product-name');
+        const productPrice = document.getElementById('product-price');
+        const productDetails = document.getElementById('product-details');
+        const productColors = document.getElementById('product-colors');
+        const productColorsSection = document.getElementById('product-colors-section');
+
+        if (!productId) {
+            loadingEl.classList.add('hidden');
+            notFound.classList.remove('hidden');
+        } else {
+            loadProduct(productId);
+        }
+
+        async function loadProduct(id) {
+            loadingEl.classList.remove('hidden');
+            productContainer.classList.add('hidden');
+            notFound.classList.add('hidden');
+            errorMessage.classList.add('hidden');
+
+            try {
+                const { data, error } = await getProduct(id);
+
+                if (error) throw error;
+
+                if (!data || !data.is_public) {
+                    // Product not found or not public
+                    loadingEl.classList.add('hidden');
+                    notFound.classList.remove('hidden');
+                    return;
+                }
+
+                // Render product
+                productName.textContent = data.name;
+                productPrice.textContent = formatPrice(data.price);
+                productDetails.textContent = data.details || 'No description available.';
+
+                // Set image
+                if (data.image_url) {
+                    productImage.src = data.image_url;
+                    productImage.alt = data.name;
+                } else {
+                    productImage.src = 'https://via.placeholder.com/800x800?text=No+Image';
+                    productImage.alt = 'No image available';
+                }
+
+                // Render colors
+                if (data.colors && data.colors.length > 0) {
+                    productColors.innerHTML = data.colors.map(color => `
+                        <div 
+                            class="color-swatch" 
+                            style="background-color: ${color}; width: 3rem; height: 3rem;"
+                            title="${color}"
+                            aria-label="Color ${color}"
+                        ></div>
+                    `).join('');
+                    productColorsSection.classList.remove('hidden');
+                } else {
+                    productColorsSection.classList.add('hidden');
+                }
+
+                // Update page title
+                document.title = `${data.name} - E-Commerce Store`;
+
+                productContainer.classList.remove('hidden');
+            } catch (error) {
+                errorMessage.textContent = 'Failed to load product: ' + error.message;
+                errorMessage.classList.remove('hidden');
+            } finally {
+                loadingEl.classList.add('hidden');
+            }
+        }
+    </script>
+</body>
+</html>

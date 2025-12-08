@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>E-Commerce Store</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <div class="container">
+            <div class="header-content">
+                <a href="index.html" class="logo">E-Commerce Store</a>
+                <div class="header-actions">
+                    <a href="admin.html" class="btn btn-secondary btn-sm">Admin</a>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="container" style="padding-top: 2rem; padding-bottom: 2rem;">
+        <h1 style="margin-bottom: 2rem;">Our Products</h1>
+
+        <!-- Search and Filters -->
+        <div class="card" style="margin-bottom: 2rem;">
+            <div class="card-body">
+                <div class="search-bar">
+                    <input 
+                        type="text" 
+                        id="search-input" 
+                        class="search-input" 
+                        placeholder="Search products by name..."
+                        aria-label="Search products"
+                    >
+                </div>
+                
+                <div class="filters" id="color-filters">
+                    <span style="font-weight: 500; margin-right: 0.5rem;">Filter by color:</span>
+                    <!-- Color filters will be inserted here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Loading State -->
+        <div id="loading" class="loading">
+            <div class="spinner"></div>
+            <p style="margin-top: 1rem;">Loading products...</p>
+        </div>
+
+        <!-- Error Message -->
+        <div id="error-message" class="alert alert-error hidden"></div>
+
+        <!-- Products Grid -->
+        <div id="products-container" class="hidden">
+            <div id="products-grid" class="product-grid">
+                <!-- Products will be inserted here -->
+            </div>
+
+            <!-- Pagination -->
+            <div id="pagination" class="pagination"></div>
+        </div>
+
+        <!-- Empty State -->
+        <div id="empty-state" class="hidden" style="text-align: center; padding: 3rem;">
+            <p style="color: var(--gray-500); font-size: 1.125rem;">No products found</p>
+            <p style="color: var(--gray-400); margin-top: 0.5rem;">Try adjusting your search or filters</p>
+        </div>
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2024 E-Commerce Store. All rights reserved.</p>
+        </div>
+    </footer>
+
+    
+    <script type="module">
+        import { initSupabase } from './config.js';
+import { getPublicProducts } from './products.js';
+import { formatPrice, debounce } from './utils.js';
+
+
+        // Initialize Supabase
+        await initSupabase();
+
+        // State
+        let allProducts = [];
+        let filteredProducts = [];
+        let currentPage = 1;
+        const pageSize = 12;
+        let selectedColor = null;
+        let searchQuery = '';
+
+        // DOM Elements
+        const loadingEl = document.getElementById('loading');
+        const errorMessage = document.getElementById('error-message');
+        const productsContainer = document.getElementById('products-container');
+        const productsGrid = document.getElementById('products-grid');
+        const emptyState = document.getElementById('empty-state');
+        const paginationEl = document.getElementById('pagination');
+        const searchInput = document.getElementById('search-input');
+        const colorFilters = document.getElementById('color-filters');
+
+        // Load all products to extract unique colors
+        async function loadAllProducts() {
+            loadingEl.classList.remove('hidden');
+            productsContainer.classList.add('hidden');
+            emptyState.classList.add('hidden');
+            errorMessage.classList.add('hidden');
+
+            try {
+                // Load all public products (we'll handle pagination client-side for filtering)
+                const { data, error } = await getPublicProducts({ page: 1, pageSize: 1000 });
+                
+                if (error) throw error;
+
+                allProducts = data || [];
+                extractUniqueColors();
+                applyFilters();
+            } catch (error) {
+                errorMessage.textContent = 'Failed to load products: ' + error.message;
+                errorMessage.classList.remove('hidden');
+            } finally {
+                loadingEl.classList.add('hidden');
+            }
+        }
+
+        // Extract unique colors from all products
+        function extractUniqueColors() {
+            const colorSet = new Set();
+            allProducts.forEach(product => {
+                (product.colors || []).forEach(color => {
+                    colorSet.add(color);
+                });
+            });
+
+            const uniqueColors = Array.from(colorSet);
+            renderColorFilters(uniqueColors);
+        }
+
+        // Render color filter chips
+        function renderColorFilters(colors) {
+            if (colors.length === 0) {
+                colorFilters.innerHTML = '<span style="color: var(--gray-500);">No colors available</span>';
+                return;
+            }
+
+            const filtersHTML = colors.map(color => `
+                <button 
+                    class="filter-chip ${selectedColor === color ? 'active' : ''}" 
+                    data-color="${color}"
+                    style="background-color: ${color}; border-color: ${color}; ${selectedColor === color ? 'box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.3);' : ''}"
+                    aria-label="Filter by color ${color}"
+                >
+                    ${selectedColor === color ? '✓' : ''}
+                </button>
+            `).join('');
+
+            colorFilters.innerHTML = `
+                <span style="font-weight: 500; margin-right: 0.5rem;">Filter by color:</span>
+                <button class="filter-chip ${!selectedColor ? 'active' : ''}" data-color="" aria-label="Show all colors">
+                    All
+                </button>
+                ${filtersHTML}
+            `;
+
+            // Add event listeners
+            colorFilters.querySelectorAll('.filter-chip').forEach(chip => {
+                chip.addEventListener('click', () => {
+                    const color = chip.dataset.color || null;
+                    selectedColor = selectedColor === color ? null : color;
+                    currentPage = 1;
+                    applyFilters();
+                });
+            });
+        }
+
+        // Apply filters and search
+        function applyFilters() {
+            filteredProducts = allProducts.filter(product => {
+                // Search filter
+                if (searchQuery) {
+                    const nameMatch = product.name.toLowerCase().includes(searchQuery.toLowerCase());
+                    if (!nameMatch) return false;
+                }
+
+                // Color filter
+                if (selectedColor) {
+                    const hasColor = (product.colors || []).includes(selectedColor);
+                    if (!hasColor) return false;
+                }
+
+                return true;
+            });
+
+            renderProducts();
+            renderPagination();
+            updateColorFilters();
+        }
+
+        // Update color filter active states
+        function updateColorFilters() {
+            colorFilters.querySelectorAll('.filter-chip').forEach(chip => {
+                const color = chip.dataset.color || null;
+                if (color === '') {
+                    chip.classList.toggle('active', !selectedColor);
+                } else {
+                    chip.classList.toggle('active', selectedColor === color);
+                    if (selectedColor === color) {
+                        chip.innerHTML = '✓';
+                        chip.style.boxShadow = '0 0 0 3px rgba(37, 99, 235, 0.3)';
+                    } else {
+                        chip.innerHTML = '';
+                        chip.style.boxShadow = '';
+                    }
+                }
+            });
+        }
+
+        // Render products
+        function renderProducts() {
+            const start = (currentPage - 1) * pageSize;
+            const end = start + pageSize;
+            const pageProducts = filteredProducts.slice(start, end);
+
+            if (pageProducts.length === 0) {
+                productsContainer.classList.add('hidden');
+                emptyState.classList.remove('hidden');
+                return;
+            }
+
+            productsGrid.innerHTML = pageProducts.map(product => `
+                <a href="product.html?id=${product.id}" class="product-card" aria-label="View ${escapeHtml(product.name)}">
+                    <img 
+                        src="${product.image_url || 'https://via.placeholder.com/400x400?text=No+Image'}" 
+                        alt="${escapeHtml(product.name)}"
+                        class="product-image"
+                        loading="lazy"
+                    >
+                    <div class="product-info">
+                        <h3 class="product-title">${escapeHtml(product.name)}</h3>
+                        <p class="product-price">${formatPrice(product.price)}</p>
+                        ${product.colors && product.colors.length > 0 ? `
+                            <div class="color-swatches">
+                                ${product.colors.map(color => `
+                                    <div 
+                                        class="color-swatch" 
+                                        style="background-color: ${color};"
+                                        title="${color}"
+                                        aria-label="Color ${color}"
+                                    ></div>
+                                `).join('')}
+                            </div>
+                        ` : ''}
+                    </div>
+                </a>
+            `).join('');
+
+            productsContainer.classList.remove('hidden');
+            emptyState.classList.add('hidden');
+        }
+
+        // Render pagination
+        function renderPagination() {
+            const totalPages = Math.ceil(filteredProducts.length / pageSize);
+            
+            if (totalPages <= 1) {
+                paginationEl.innerHTML = '';
+                return;
+            }
+
+            paginationEl.innerHTML = `
+                <button 
+                    class="pagination-btn" 
+                    ${currentPage === 1 ? 'disabled' : ''} 
+                    onclick="goToPage(${currentPage - 1})"
+                    aria-label="Previous page"
+                >
+                    Previous
+                </button>
+                <span class="pagination-info">
+                    Page ${currentPage} of ${totalPages} (${filteredProducts.length} products)
+                </span>
+                <button 
+                    class="pagination-btn" 
+                    ${currentPage === totalPages ? 'disabled' : ''} 
+                    onclick="goToPage(${currentPage + 1})"
+                    aria-label="Next page"
+                >
+                    Next
+                </button>
+            `;
+        }
+
+        // Global function for pagination
+        window.goToPage = (page) => {
+            currentPage = page;
+            renderProducts();
+            renderPagination();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        };
+
+        // Search with debounce
+        const debouncedSearch = debounce((query) => {
+            searchQuery = query;
+            currentPage = 1;
+            applyFilters();
+        }, 300);
+
+        searchInput.addEventListener('input', (e) => {
+            debouncedSearch(e.target.value);
+        });
+
+        // Utility function
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Initial load
+        loadAllProducts();
+    </script>
+</body>
+</html>
+
+
+
+
+
+
+
+
