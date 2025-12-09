@@ -136,7 +136,7 @@
     </div>
 
     
-    <script type="module">
+   <script type="module">
 import { initSupabase } from './config.js';
 import { isAdmin, signOut, getCurrentUser } from './auth.js';
 import { getAllProducts, createProduct, updateProduct, deleteProduct } from './products.js';
@@ -144,30 +144,10 @@ import { uploadImage, createImagePreview, revokeImagePreview, validateImageFile 
 import { showToast, formatPrice } from './utils.js';
 
 await initSupabase();
-// Check authentication and admin role
-async function checkAuth() {
-    const user = await getCurrentUser();
-    if (!user) {
-        window.location.href = 'login.html';
-        return null; // stop execution
-    }
 
-    const admin = await isAdmin();
-    if (!admin) {
-        window.location.href = 'login.html';
-        return null;
-    }
-
-    // Set user email in dashboard
-    document.getElementById('user-email').textContent = user.email;
-    return user;
-}
-
-// Wait for auth check
-const user = await checkAuth();
-if (!user) return; // Stop running the rest of the script if not authenticated/admin
-
-// Authentication & Admin check
+// -----------------------------
+// AUTHENTICATION & ADMIN CHECK
+// -----------------------------
 const user = await getCurrentUser();
 if (!user) {
     window.location.href = 'login.html';
@@ -180,16 +160,17 @@ if (!admin) {
     throw new Error('Not admin');
 }
 
-// Display user email
+// Display user email in dashboard
 document.getElementById('user-email').textContent = user.email;
 
-// State
+// -----------------------------
+// STATE & DOM ELEMENTS
+// -----------------------------
 let currentPage = 1;
 let products = [];
 let productToDelete = null;
 let imagePreviewUrl = null;
 
-// DOM elements
 const loadingEl = document.getElementById('loading');
 const productsContainer = document.getElementById('products-container');
 const emptyState = document.getElementById('empty-state');
@@ -206,7 +187,9 @@ const productImage = document.getElementById('product-image');
 const imagePreviewContainer = document.getElementById('image-preview-container');
 const imagePreview = document.getElementById('image-preview');
 
-// Load products
+// -----------------------------
+// LOAD PRODUCTS
+// -----------------------------
 async function loadProducts() {
     loadingEl.classList.remove('hidden');
     productsContainer.classList.add('hidden');
@@ -230,7 +213,9 @@ async function loadProducts() {
     }
 }
 
-// Render products table
+// -----------------------------
+// RENDER PRODUCTS & PAGINATION
+// -----------------------------
 function renderProducts() {
     productsTableBody.innerHTML = products.map(product => `
         <tr>
@@ -249,7 +234,6 @@ function renderProducts() {
     `).join('');
 }
 
-// Pagination
 function renderPagination(total) {
     const totalPages = Math.ceil(total / 20);
     if (totalPages <= 1) {
@@ -264,7 +248,9 @@ function renderPagination(total) {
     `;
 }
 
-// Global functions
+// -----------------------------
+// GLOBAL FUNCTIONS
+// -----------------------------
 window.goToPage = (page) => { currentPage = page; loadProducts(); };
 
 window.editProduct = async (id) => {
@@ -296,7 +282,9 @@ window.confirmDelete = (id) => {
     deleteModal.classList.add('active');
 };
 
-// Color picker & swatches
+// -----------------------------
+// COLOR PICKER & SWATCHES
+// -----------------------------
 colorPicker.addEventListener('input', e => colorText.value = e.target.value.toUpperCase());
 colorText.addEventListener('input', e => {
     const value = e.target.value;
@@ -324,7 +312,9 @@ function addColorSwatch(color) {
     colorsContainer.appendChild(swatch);
 }
 
-// Image preview
+// -----------------------------
+// IMAGE PREVIEW
+// -----------------------------
 productImage.addEventListener('change', e => {
     const file = e.target.files[0];
     if (!file) {
@@ -346,17 +336,20 @@ productImage.addEventListener('change', e => {
     imagePreviewContainer.classList.remove('hidden');
 });
 
-// Product form submission
+// -----------------------------
+// PRODUCT FORM SUBMISSION
+// -----------------------------
 productForm.addEventListener('submit', async e => {
     e.preventDefault();
+
     const productId = document.getElementById('product-id').value;
-    const name = document.getElementById('product-name').value;
-    const details = document.getElementById('product-details').value;
+    const name = document.getElementById('product-name').value.trim();
+    const details = document.getElementById('product-details').value.trim() || null;
     const price = parseFloat(document.getElementById('product-price').value);
     const isPublic = document.getElementById('product-is-public').checked;
     const colors = Array.from(colorsContainer.querySelectorAll('.color-swatch')).map(s => s.style.backgroundColor);
 
-    if (!name.trim()) return showToast('Product name is required', 'error');
+    if (!name) return showToast('Product name is required', 'error');
     if (price < 0) return showToast('Price must be positive', 'error');
 
     const saveBtn = document.getElementById('save-btn');
@@ -374,7 +367,7 @@ productForm.addEventListener('submit', async e => {
             imageUrl = existingProduct?.image_url || null;
         }
 
-        const productData = { name: name.trim(), details: details.trim() || null, price, colors, image_url: imageUrl, is_public: isPublic };
+        const productData = { name, details, price, colors, image_url: imageUrl, is_public: isPublic };
         const result = productId ? await updateProduct(productId, productData) : await createProduct(productData);
         if (result.error) throw result.error;
 
@@ -396,11 +389,12 @@ productForm.addEventListener('submit', async e => {
     }
 });
 
-// Modal controls
+// -----------------------------
+// MODALS & DELETE
+// -----------------------------
 document.getElementById('modal-close').addEventListener('click', () => productModal.classList.remove('active'));
 document.getElementById('cancel-btn').addEventListener('click', () => productModal.classList.remove('active'));
 
-// Delete modal
 document.getElementById('confirm-delete-btn').addEventListener('click', async () => {
     if (!productToDelete) return;
     const deleteBtn = document.getElementById('confirm-delete-btn');
@@ -425,26 +419,35 @@ document.getElementById('confirm-delete-btn').addEventListener('click', async ()
 document.getElementById('delete-modal-close').addEventListener('click', () => { deleteModal.classList.remove('active'); productToDelete = null; });
 document.getElementById('cancel-delete-btn').addEventListener('click', () => { deleteModal.classList.remove('active'); productToDelete = null; });
 
-// Logout
+// -----------------------------
+// LOGOUT
+// -----------------------------
 document.getElementById('logout-btn').addEventListener('click', async () => {
     await signOut();
     window.location.href = 'login.html';
 });
 
-// Escape HTML utility
+// -----------------------------
+// UTILS
+// -----------------------------
 function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
 }
 
-// Initial load
+// -----------------------------
+// INITIAL LOAD
+// -----------------------------
 loadProducts();
+
 </script>
+
 
     
 </body>
 </html>
+
 
 
 
