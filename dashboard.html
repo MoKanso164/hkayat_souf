@@ -413,13 +413,13 @@
                 let imageUrl = null;
 
                 // Upload image if new file selected
-                if (productImage.files[0]) {
-                    const { data, error } = await uploadImage(productImage.files[0], productId || undefined);
-                    if (error) {
-                        throw new Error('Failed to upload image: ' + error);
-                    }
-                    imageUrl = data.url;
-                } else if (productId) {
+                const { data, error } = await uploadImage(productImage.files[0], productId || undefined);
+if (error) {
+    // Show the real Supabase error message
+    throw new Error('Failed to upload image: ' + (error.message || JSON.stringify(error)));
+}
+
+                 else if (productId) {
                     // Keep existing image if editing and no new file
                     const existingProduct = products.find(p => p.id === productId);
                     imageUrl = existingProduct?.image_url || null;
@@ -524,4 +524,5 @@
     </script>
 </body>
 </html>
+
 
