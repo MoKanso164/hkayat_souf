@@ -43,11 +43,8 @@
                         <th>Actions</th>
                     </tr>
                 </thead>
-                <tbody id="products-table-body" class="table-body">
-                    <!-- Products will be inserted here -->
-                </tbody>
+                <tbody id="products-table-body" class="table-body"></tbody>
             </table>
-
             <div id="pagination" class="pagination"></div>
         </div>
 
@@ -67,7 +64,7 @@
             <div class="modal-body">
                 <form id="product-form">
                     <input type="hidden" id="product-id">
-                    
+
                     <div class="form-group">
                         <label for="product-name" class="form-label required">Name</label>
                         <input type="text" id="product-name" class="form-input" required aria-required="true">
@@ -135,323 +132,319 @@
         </div>
     </div>
 
-    
-   <script type="module">
-import { initSupabase } from './config.js';
-import { isAdmin, signOut, getCurrentUser } from './auth.js';
-import { getAllProducts, createProduct, updateProduct, deleteProduct } from './products.js';
-import { uploadImage, createImagePreview, revokeImagePreview, validateImageFile } from './storage.js';
-import { showToast, formatPrice } from './utils.js';
+    <script type="module">
+        import { initSupabase, getSupabase } from './config.js';
+        import { isAdmin, signOut, getCurrentUser } from './auth.js';
+        import { getAllProducts, createProduct, updateProduct, deleteProduct } from './products.js';
+        import { uploadImage, createImagePreview, revokeImagePreview, validateImageFile } from './storage.js';
+        import { showToast, formatPrice } from './utils.js';
 
-await initSupabase();
+        await initSupabase();
+        const supabase = getSupabase();
 
-// -----------------------------
-// AUTHENTICATION & ADMIN CHECK
-// -----------------------------
-const user = await getCurrentUser();
-if (!user) {
-    window.location.href = 'login.html';
-    throw new Error('Not authenticated');
-}
+        const userEmailEl = document.getElementById('user-email');
+        const loadingEl = document.getElementById('loading');
+        const productsContainer = document.getElementById('products-container');
+        const emptyState = document.getElementById('empty-state');
+        const productsTableBody = document.getElementById('products-table-body');
+        const paginationEl = document.getElementById('pagination');
+        const productModal = document.getElementById('product-modal');
+        const deleteModal = document.getElementById('delete-modal');
+        const productForm = document.getElementById('product-form');
+        const colorsContainer = document.getElementById('colors-container');
+        const colorPicker = document.getElementById('color-picker');
+        const colorText = document.getElementById('color-text');
+        const addColorBtn = document.getElementById('add-color-btn');
+        const productImage = document.getElementById('product-image');
+        const imagePreviewContainer = document.getElementById('image-preview-container');
+        const imagePreview = document.getElementById('image-preview');
 
-const admin = await isAdmin();
-if (!admin) {
-    window.location.href = 'login.html';
-    throw new Error('Not admin');
-}
+        let currentPage = 1;
+        let products = [];
+        let productToDelete = null;
+        let imagePreviewUrl = null;
 
-// Display user email in dashboard
-document.getElementById('user-email').textContent = user.email;
+        // -----------------------------
+        // AUTHENTICATION & ADMIN CHECK
+        // -----------------------------
+        async function checkAuth() {
+            const user = await getCurrentUser();
 
-// -----------------------------
-// STATE & DOM ELEMENTS
-// -----------------------------
-let currentPage = 1;
-let products = [];
-let productToDelete = null;
-let imagePreviewUrl = null;
+            if (!user) {
+                supabase.auth.onAuthStateChange((event, session) => {
+                    if (!session) window.location.href = 'login.html';
+                });
+                setTimeout(() => window.location.href = 'login.html', 1000);
+                return null;
+            }
 
-const loadingEl = document.getElementById('loading');
-const productsContainer = document.getElementById('products-container');
-const emptyState = document.getElementById('empty-state');
-const productsTableBody = document.getElementById('products-table-body');
-const paginationEl = document.getElementById('pagination');
-const productModal = document.getElementById('product-modal');
-const deleteModal = document.getElementById('delete-modal');
-const productForm = document.getElementById('product-form');
-const colorsContainer = document.getElementById('colors-container');
-const colorPicker = document.getElementById('color-picker');
-const colorText = document.getElementById('color-text');
-const addColorBtn = document.getElementById('add-color-btn');
-const productImage = document.getElementById('product-image');
-const imagePreviewContainer = document.getElementById('image-preview-container');
-const imagePreview = document.getElementById('image-preview');
+            const admin = await isAdmin();
+            if (!admin) {
+                window.location.href = 'login.html';
+                throw new Error('Not admin');
+            }
 
-// -----------------------------
-// LOAD PRODUCTS
-// -----------------------------
-async function loadProducts() {
-    loadingEl.classList.remove('hidden');
-    productsContainer.classList.add('hidden');
-    emptyState.classList.add('hidden');
-
-    try {
-        const { data, error, count } = await getAllProducts({ page: currentPage, pageSize: 20 });
-        if (error) throw error;
-
-        products = data || [];
-        renderProducts();
-        renderPagination(count || 0);
-
-        if (products.length === 0) emptyState.classList.remove('hidden');
-        else productsContainer.classList.remove('hidden');
-    } catch (error) {
-        document.getElementById('error-message').textContent = 'Failed to load products: ' + error.message;
-        document.getElementById('error-message').classList.remove('hidden');
-    } finally {
-        loadingEl.classList.add('hidden');
-    }
-}
-
-// -----------------------------
-// RENDER PRODUCTS & PAGINATION
-// -----------------------------
-function renderProducts() {
-    productsTableBody.innerHTML = products.map(product => `
-        <tr>
-            <td>${product.image_url ? `<img src="${product.image_url}" alt="${product.name}" style="width:50px;height:50px;object-fit:cover;border-radius:0.25rem;">` : '<div style="width:50px;height:50px;background:var(--gray-200);border-radius:0.25rem;"></div>'}</td>
-            <td><strong>${escapeHtml(product.name)}</strong></td>
-            <td>${formatPrice(product.price)}</td>
-            <td>${(product.colors || []).map(color => `<div class="color-swatch" style="background-color:${color};" title="${color}"></div>`).join('')}</td>
-            <td><span style="padding:0.25rem 0.5rem;border-radius:0.25rem;font-size:0.75rem;${product.is_public ? 'background:#d1fae5;color:#065f46;' : 'background:#fee2e2;color:#991b1b;'}">${product.is_public ? 'Public' : 'Draft'}</span></td>
-            <td>
-                <div class="table-actions">
-                    <button class="btn btn-secondary btn-sm" onclick="editProduct('${product.id}')">Edit</button>
-                    <button class="btn btn-danger btn-sm" onclick="confirmDelete('${product.id}')">Delete</button>
-                </div>
-            </td>
-        </tr>
-    `).join('');
-}
-
-function renderPagination(total) {
-    const totalPages = Math.ceil(total / 20);
-    if (totalPages <= 1) {
-        paginationEl.innerHTML = '';
-        return;
-    }
-
-    paginationEl.innerHTML = `
-        <button class="pagination-btn" ${currentPage === 1 ? 'disabled' : ''} onclick="goToPage(${currentPage - 1})">Previous</button>
-        <span class="pagination-info">Page ${currentPage} of ${totalPages}</span>
-        <button class="pagination-btn" ${currentPage === totalPages ? 'disabled' : ''} onclick="goToPage(${currentPage + 1})">Next</button>
-    `;
-}
-
-// -----------------------------
-// GLOBAL FUNCTIONS
-// -----------------------------
-window.goToPage = (page) => { currentPage = page; loadProducts(); };
-
-window.editProduct = async (id) => {
-    const product = products.find(p => p.id === id);
-    if (!product) return;
-
-    document.getElementById('product-id').value = product.id;
-    document.getElementById('product-name').value = product.name;
-    document.getElementById('product-details').value = product.details || '';
-    document.getElementById('product-price').value = product.price;
-    document.getElementById('product-is-public').checked = product.is_public;
-
-    colorsContainer.innerHTML = '';
-    (product.colors || []).forEach(color => addColorSwatch(color));
-
-    if (product.image_url) {
-        imagePreview.src = product.image_url;
-        imagePreviewContainer.classList.remove('hidden');
-    } else {
-        imagePreviewContainer.classList.add('hidden');
-    }
-
-    document.getElementById('modal-title').textContent = 'Edit Product';
-    productModal.classList.add('active');
-};
-
-window.confirmDelete = (id) => {
-    productToDelete = id;
-    deleteModal.classList.add('active');
-};
-
-// -----------------------------
-// COLOR PICKER & SWATCHES
-// -----------------------------
-colorPicker.addEventListener('input', e => colorText.value = e.target.value.toUpperCase());
-colorText.addEventListener('input', e => {
-    const value = e.target.value;
-    if (/^#[0-9A-Fa-f]{6}$/.test(value)) colorPicker.value = value;
-});
-addColorBtn.addEventListener('click', () => {
-    const color = colorText.value || colorPicker.value;
-    if (!/^#[0-9A-Fa-f]{6}$/.test(color)) {
-        showToast('Please enter a valid hex color (e.g., #FF0000)', 'error');
-        return;
-    }
-    addColorSwatch(color.toUpperCase());
-    colorText.value = '';
-    colorPicker.value = '#000000';
-});
-function addColorSwatch(color) {
-    const swatch = document.createElement('div');
-    swatch.className = 'color-swatch';
-    swatch.style.backgroundColor = color;
-    swatch.title = color;
-    swatch.innerHTML = `<button type="button" onclick="this.parentElement.remove()" style="position:absolute;top:-5px;right:-5px;background:var(--danger);color:white;border:none;border-radius:50%;width:18px;height:18px;font-size:12px;cursor:pointer;display:none;">×</button>`;
-    swatch.style.position = 'relative';
-    swatch.addEventListener('mouseenter', () => swatch.querySelector('button').style.display = 'block');
-    swatch.addEventListener('mouseleave', () => swatch.querySelector('button').style.display = 'none');
-    colorsContainer.appendChild(swatch);
-}
-
-// -----------------------------
-// IMAGE PREVIEW
-// -----------------------------
-productImage.addEventListener('change', e => {
-    const file = e.target.files[0];
-    if (!file) {
-        imagePreviewContainer.classList.add('hidden');
-        if (imagePreviewUrl) {
-            revokeImagePreview(imagePreviewUrl);
-            imagePreviewUrl = null;
-        }
-        return;
-    }
-    const validation = validateImageFile(file);
-    if (!validation.valid) {
-        showToast(validation.error, 'error');
-        e.target.value = '';
-        return;
-    }
-    imagePreviewUrl = createImagePreview(file);
-    imagePreview.src = imagePreviewUrl;
-    imagePreviewContainer.classList.remove('hidden');
-});
-
-// -----------------------------
-// PRODUCT FORM SUBMISSION
-// -----------------------------
-productForm.addEventListener('submit', async e => {
-    e.preventDefault();
-
-    const productId = document.getElementById('product-id').value;
-    const name = document.getElementById('product-name').value.trim();
-    const details = document.getElementById('product-details').value.trim() || null;
-    const price = parseFloat(document.getElementById('product-price').value);
-    const isPublic = document.getElementById('product-is-public').checked;
-    const colors = Array.from(colorsContainer.querySelectorAll('.color-swatch')).map(s => s.style.backgroundColor);
-
-    if (!name) return showToast('Product name is required', 'error');
-    if (price < 0) return showToast('Price must be positive', 'error');
-
-    const saveBtn = document.getElementById('save-btn');
-    saveBtn.disabled = true;
-    saveBtn.textContent = 'Saving...';
-
-    try {
-        let imageUrl = null;
-        if (productImage.files[0]) {
-            const { data, error } = await uploadImage(productImage.files[0], productId || undefined);
-            if (error) throw new Error('Failed to upload image: ' + error);
-            imageUrl = data.url;
-        } else if (productId) {
-            const existingProduct = products.find(p => p.id === productId);
-            imageUrl = existingProduct?.image_url || null;
+            userEmailEl.textContent = user.email;
+            return user;
         }
 
-        const productData = { name, details, price, colors, image_url: imageUrl, is_public: isPublic };
-        const result = productId ? await updateProduct(productId, productData) : await createProduct(productData);
-        if (result.error) throw result.error;
+        // -----------------------------
+        // LOAD PRODUCTS
+        // -----------------------------
+        async function loadProducts() {
+            loadingEl.classList.remove('hidden');
+            productsContainer.classList.add('hidden');
+            emptyState.classList.add('hidden');
 
-        showToast(`Product ${productId ? 'updated' : 'created'} successfully!`, 'success');
-        productModal.classList.remove('active');
-        productForm.reset();
-        colorsContainer.innerHTML = '';
-        imagePreviewContainer.classList.add('hidden');
-        if (imagePreviewUrl) {
-            revokeImagePreview(imagePreviewUrl);
-            imagePreviewUrl = null;
+            try {
+                const { data, error, count } = await getAllProducts({ page: currentPage, pageSize: 20 });
+                if (error) throw error;
+
+                products = data || [];
+                renderProducts();
+                renderPagination(count || 0);
+
+                if (products.length === 0) emptyState.classList.remove('hidden');
+                else productsContainer.classList.remove('hidden');
+            } catch (error) {
+                document.getElementById('error-message').textContent = 'Failed to load products: ' + error.message;
+                document.getElementById('error-message').classList.remove('hidden');
+            } finally {
+                loadingEl.classList.add('hidden');
+            }
         }
-        loadProducts();
-    } catch (error) {
-        showToast('Failed to save product: ' + error.message, 'error');
-    } finally {
-        saveBtn.disabled = false;
-        saveBtn.textContent = 'Save Product';
-    }
-});
 
-// -----------------------------
-// MODALS & DELETE
-// -----------------------------
-document.getElementById('modal-close').addEventListener('click', () => productModal.classList.remove('active'));
-document.getElementById('cancel-btn').addEventListener('click', () => productModal.classList.remove('active'));
+        // -----------------------------
+        // RENDER PRODUCTS & PAGINATION
+        // -----------------------------
+        function renderProducts() {
+            productsTableBody.innerHTML = products.map(product => `
+                <tr>
+                    <td>${product.image_url ? `<img src="${product.image_url}" alt="${product.name}" style="width:50px;height:50px;object-fit:cover;border-radius:0.25rem;">` : '<div style="width:50px;height:50px;background:var(--gray-200);border-radius:0.25rem;"></div>'}</td>
+                    <td><strong>${escapeHtml(product.name)}</strong></td>
+                    <td>${formatPrice(product.price)}</td>
+                    <td>${(product.colors || []).map(color => `<div class="color-swatch" style="background-color:${color};" title="${color}"></div>`).join('')}</td>
+                    <td><span style="padding:0.25rem 0.5rem;border-radius:0.25rem;font-size:0.75rem;${product.is_public ? 'background:#d1fae5;color:#065f46;' : 'background:#fee2e2;color:#991b1b;'}">${product.is_public ? 'Public' : 'Draft'}</span></td>
+                    <td>
+                        <div class="table-actions">
+                            <button class="btn btn-secondary btn-sm" onclick="editProduct('${product.id}')">Edit</button>
+                            <button class="btn btn-danger btn-sm" onclick="confirmDelete('${product.id}')">Delete</button>
+                        </div>
+                    </td>
+                </tr>
+            `).join('');
+        }
 
-document.getElementById('confirm-delete-btn').addEventListener('click', async () => {
-    if (!productToDelete) return;
-    const deleteBtn = document.getElementById('confirm-delete-btn');
-    deleteBtn.disabled = true;
-    deleteBtn.textContent = 'Deleting...';
+        function renderPagination(total) {
+            const totalPages = Math.ceil(total / 20);
+            if (totalPages <= 1) {
+                paginationEl.innerHTML = '';
+                return;
+            }
 
-    try {
-        const { error } = await deleteProduct(productToDelete);
-        if (error) throw error;
-        showToast('Product deleted successfully', 'success');
-        deleteModal.classList.remove('active');
-        productToDelete = null;
-        loadProducts();
-    } catch (error) {
-        showToast('Failed to delete product: ' + error.message, 'error');
-    } finally {
-        deleteBtn.disabled = false;
-        deleteBtn.textContent = 'Delete';
-    }
-});
+            paginationEl.innerHTML = `
+                <button class="pagination-btn" ${currentPage === 1 ? 'disabled' : ''} onclick="goToPage(${currentPage - 1})">Previous</button>
+                <span class="pagination-info">Page ${currentPage} of ${totalPages}</span>
+                <button class="pagination-btn" ${currentPage === totalPages ? 'disabled' : ''} onclick="goToPage(${currentPage + 1})">Next</button>
+            `;
+        }
 
-document.getElementById('delete-modal-close').addEventListener('click', () => { deleteModal.classList.remove('active'); productToDelete = null; });
-document.getElementById('cancel-delete-btn').addEventListener('click', () => { deleteModal.classList.remove('active'); productToDelete = null; });
+        // -----------------------------
+        // GLOBAL FUNCTIONS
+        // -----------------------------
+        window.goToPage = (page) => { currentPage = page; loadProducts(); };
 
-// -----------------------------
-// LOGOUT
-// -----------------------------
-document.getElementById('logout-btn').addEventListener('click', async () => {
-    await signOut();
-    window.location.href = 'login.html';
-});
+        window.editProduct = async (id) => {
+            const product = products.find(p => p.id === id);
+            if (!product) return;
 
-// -----------------------------
-// UTILS
-// -----------------------------
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}
+            document.getElementById('product-id').value = product.id;
+            document.getElementById('product-name').value = product.name;
+            document.getElementById('product-details').value = product.details || '';
+            document.getElementById('product-price').value = product.price;
+            document.getElementById('product-is-public').checked = product.is_public;
 
-// -----------------------------
-// INITIAL LOAD
-// -----------------------------
-loadProducts();
+            colorsContainer.innerHTML = '';
+            (product.colors || []).forEach(color => addColorSwatch(color));
 
-</script>
+            if (product.image_url) {
+                imagePreview.src = product.image_url;
+                imagePreviewContainer.classList.remove('hidden');
+            } else {
+                imagePreviewContainer.classList.add('hidden');
+            }
 
+            document.getElementById('modal-title').textContent = 'Edit Product';
+            productModal.classList.add('active');
+        };
 
-    
+        window.confirmDelete = (id) => {
+            productToDelete = id;
+            deleteModal.classList.add('active');
+        };
+
+        // -----------------------------
+        // COLOR PICKER & SWATCHES
+        // -----------------------------
+        colorPicker.addEventListener('input', e => colorText.value = e.target.value.toUpperCase());
+        colorText.addEventListener('input', e => {
+            const value = e.target.value;
+            if (/^#[0-9A-Fa-f]{6}$/.test(value)) colorPicker.value = value;
+        });
+        addColorBtn.addEventListener('click', () => {
+            const color = colorText.value || colorPicker.value;
+            if (!/^#[0-9A-Fa-f]{6}$/.test(color)) {
+                showToast('Please enter a valid hex color (e.g., #FF0000)', 'error');
+                return;
+            }
+            addColorSwatch(color.toUpperCase());
+            colorText.value = '';
+            colorPicker.value = '#000000';
+        });
+        function addColorSwatch(color) {
+            const swatch = document.createElement('div');
+            swatch.className = 'color-swatch';
+            swatch.style.backgroundColor = color;
+            swatch.title = color;
+            swatch.innerHTML = `<button type="button" onclick="this.parentElement.remove()" style="position:absolute;top:-5px;right:-5px;background:var(--danger);color:white;border:none;border-radius:50%;width:18px;height:18px;font-size:12px;cursor:pointer;display:none;">×</button>`;
+            swatch.style.position = 'relative';
+            swatch.addEventListener('mouseenter', () => swatch.querySelector('button').style.display = 'block');
+            swatch.addEventListener('mouseleave', () => swatch.querySelector('button').style.display = 'none');
+            colorsContainer.appendChild(swatch);
+        }
+
+        // -----------------------------
+        // IMAGE PREVIEW
+        // -----------------------------
+        productImage.addEventListener('change', e => {
+            const file = e.target.files[0];
+            if (!file) {
+                imagePreviewContainer.classList.add('hidden');
+                if (imagePreviewUrl) {
+                    revokeImagePreview(imagePreviewUrl);
+                    imagePreviewUrl = null;
+                }
+                return;
+            }
+            const validation = validateImageFile(file);
+            if (!validation.valid) {
+                showToast(validation.error, 'error');
+                e.target.value = '';
+                return;
+            }
+            imagePreviewUrl = createImagePreview(file);
+            imagePreview.src = imagePreviewUrl;
+            imagePreviewContainer.classList.remove('hidden');
+        });
+
+        // -----------------------------
+        // PRODUCT FORM SUBMISSION
+        // -----------------------------
+        productForm.addEventListener('submit', async e => {
+            e.preventDefault();
+
+            const productId = document.getElementById('product-id').value;
+            const name = document.getElementById('product-name').value.trim();
+            const details = document.getElementById('product-details').value.trim() || null;
+            const price = parseFloat(document.getElementById('product-price').value);
+            const isPublic = document.getElementById('product-is-public').checked;
+            const colors = Array.from(colorsContainer.querySelectorAll('.color-swatch')).map(s => s.style.backgroundColor);
+
+            if (!name) return showToast('Product name is required', 'error');
+            if (price < 0) return showToast('Price must be positive', 'error');
+
+            const saveBtn = document.getElementById('save-btn');
+            saveBtn.disabled = true;
+            saveBtn.textContent = 'Saving...';
+
+            try {
+                let imageUrl = null;
+                if (productImage.files[0]) {
+                    const { data, error } = await uploadImage(productImage.files[0], productId || undefined);
+                    if (error) throw new Error('Failed to upload image: ' + error);
+                    imageUrl = data.url;
+                } else if (productId) {
+                    const existingProduct = products.find(p => p.id === productId);
+                    imageUrl = existingProduct?.image_url || null;
+                }
+
+                const productData = { name, details, price, colors, image_url: imageUrl, is_public: isPublic };
+                const result = productId ? await updateProduct(productId, productData) : await createProduct(productData);
+                if (result.error) throw result.error;
+
+                showToast(`Product ${productId ? 'updated' : 'created'} successfully!`, 'success');
+                productModal.classList.remove('active');
+                productForm.reset();
+                colorsContainer.innerHTML = '';
+                imagePreviewContainer.classList.add('hidden');
+                if (imagePreviewUrl) {
+                    revokeImagePreview(imagePreviewUrl);
+                    imagePreviewUrl = null;
+                }
+                loadProducts();
+            } catch (error) {
+                showToast('Failed to save product: ' + error.message, 'error');
+            } finally {
+                saveBtn.disabled = false;
+                saveBtn.textContent = 'Save Product';
+            }
+        });
+
+        // -----------------------------
+        // MODALS & DELETE
+        // -----------------------------
+        document.getElementById('modal-close').addEventListener('click', () => productModal.classList.remove('active'));
+        document.getElementById('cancel-btn').addEventListener('click', () => productModal.classList.remove('active'));
+
+        document.getElementById('confirm-delete-btn').addEventListener('click', async () => {
+            if (!productToDelete) return;
+            const deleteBtn = document.getElementById('confirm-delete-btn');
+            deleteBtn.disabled = true;
+            deleteBtn.textContent = 'Deleting...';
+
+            try {
+                const { error } = await deleteProduct(productToDelete);
+                if (error) throw error;
+                showToast('Product deleted successfully', 'success');
+                deleteModal.classList.remove('active');
+                productToDelete = null;
+                loadProducts();
+            } catch (error) {
+                showToast('Failed to delete product: ' + error.message, 'error');
+            } finally {
+                deleteBtn.disabled = false;
+                deleteBtn.textContent = 'Delete';
+            }
+        });
+
+        document.getElementById('delete-modal-close').addEventListener('click', () => { deleteModal.classList.remove('active'); productToDelete = null; });
+        document.getElementById('cancel-delete-btn').addEventListener('click', () => { deleteModal.classList.remove('active'); productToDelete = null; });
+
+        // -----------------------------
+        // LOGOUT
+        // -----------------------------
+        document.getElementById('logout-btn').addEventListener('click', async () => {
+            await signOut();
+            window.location.href = 'login.html';
+        });
+
+        // -----------------------------
+        // UTILS
+        // -----------------------------
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // -----------------------------
+        // INITIAL LOAD
+        // -----------------------------
+        (async () => {
+            await checkAuth();
+            loadProducts();
+        })();
+
+    </script>
 </body>
 </html>
-
-
-
-
-
-
-
-
