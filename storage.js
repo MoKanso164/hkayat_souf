@@ -28,7 +28,7 @@ export async function uploadImage(file, productId = null) {
 
   // Upload file with upsert: true to avoid conflicts
   const { data, error } = await supabase.storage
-    .from('product-images')
+    .from('products')
     .upload(filePath, file, {
       cacheControl: '3600',
       upsert: true,
@@ -41,7 +41,7 @@ export async function uploadImage(file, productId = null) {
 
   // Get public URL
   const { data: { publicUrl } } = supabase.storage
-    .from('product-images')
+    .from('products')
     .getPublicUrl(filePath);
 
   return { data: { url: publicUrl, path: filePath }, error: null };
@@ -89,3 +89,4 @@ export function validateImageFile(file) {
 
   return { valid: true };
 }
+
