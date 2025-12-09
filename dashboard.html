@@ -95,7 +95,7 @@
 
                     <div class="form-group">
                         <label for="product-image" class="form-label">Image</label>
-                        <input type="file" id="products" class="form-input" accept="image/jpeg,image/jpg,image/png,image/webp">
+                        <input type="file" id="product-image" class="form-input" accept="image/jpeg,image/jpg,image/png,image/webp">
                         <div id="image-preview-container" class="image-preview-container hidden">
                             <img id="image-preview" class="image-preview" alt="Preview">
                         </div>
@@ -413,16 +413,12 @@
                 let imageUrl = null;
 
                 // Upload image if new file selected
-               // Upload image if new file selected
-if (productImage.files[0]) {
-    const { data, error } = await uploadImage(productImage.files[0], productId || undefined);
-    if (error) {
-        // Show the real error message from Supabase instead of [object Object]
-        throw new Error('Failed to upload image: ' + (error.message || JSON.stringify(error)));
-    }
-    imageUrl = data.url;
-
-
+                if (productImage.files[0]) {
+                    const { data, error } = await uploadImage(productImage.files[0], productId || undefined);
+                    if (error) {
+                        throw new Error('Failed to upload image: ' + error);
+                    }
+                    imageUrl = data.url;
                 } else if (productId) {
                     // Keep existing image if editing and no new file
                     const existingProduct = products.find(p => p.id === productId);
@@ -528,6 +524,4 @@ if (productImage.files[0]) {
     </script>
 </body>
 </html>
-
-
 
