@@ -148,20 +148,23 @@
 
         // Check authentication and admin role
         const user = await getCurrentUser();
-        if (!user) {
-            window.location.href = 'login.html';
-            throw new Error('Not authenticated');
-        }
+        // After initializing Supabase
+const user = await getCurrentUser();
+if (!user) {
+    window.location.href = 'login.html';
+    throw new Error('Not authenticated');
+}
 
-        const admin = await isAdmin();
-        if (!admin) {
-            alert('Access denied. Admin privileges required.');
-            window.location.href = 'login.html';
-            throw new Error('Not admin');
-        }
+const admin = await isAdmin();
+if (!admin) {
+    // No alert popup anymore
+    window.location.href = 'login.html';
+    throw new Error('Not admin');
+}
 
-        // Set user email
-        document.getElementById('user-email').textContent = user.email;
+// Set email in dashboard
+document.getElementById('user-email').textContent = user.email;
+
 
         // State
         let currentPage = 1;
@@ -524,6 +527,7 @@
     </script>
 </body>
 </html>
+
 
 
 
