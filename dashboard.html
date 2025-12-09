@@ -144,6 +144,28 @@ import { uploadImage, createImagePreview, revokeImagePreview, validateImageFile 
 import { showToast, formatPrice } from './utils.js';
 
 await initSupabase();
+// Check authentication and admin role
+async function checkAuth() {
+    const user = await getCurrentUser();
+    if (!user) {
+        window.location.href = 'login.html';
+        return null; // stop execution
+    }
+
+    const admin = await isAdmin();
+    if (!admin) {
+        window.location.href = 'login.html';
+        return null;
+    }
+
+    // Set user email in dashboard
+    document.getElementById('user-email').textContent = user.email;
+    return user;
+}
+
+// Wait for auth check
+const user = await checkAuth();
+if (!user) return; // Stop running the rest of the script if not authenticated/admin
 
 // Authentication & Admin check
 const user = await getCurrentUser();
@@ -423,6 +445,7 @@ loadProducts();
     
 </body>
 </html>
+
 
 
 
