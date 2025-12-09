@@ -382,57 +382,56 @@
 
         // Product form submission
         productForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
+    e.preventDefault();
 
-            const productId = document.getElementById('product-id').value;
-            const name = document.getElementById('product-name').value;
-            const details = document.getElementById('product-details').value;
-            const price = parseFloat(document.getElementById('product-price').value);
-            const isPublic = document.getElementById('product-is-public').checked;
+    const productId = document.getElementById('product-id').value;
+    const name = document.getElementById('product-name').value;
+    const details = document.getElementById('product-details').value;
+    const price = parseFloat(document.getElementById('product-price').value);
+    const isPublic = document.getElementById('product-is-public').checked;
 
-            // Get colors
-            const colors = Array.from(colorsContainer.querySelectorAll('.color-swatch'))
-                .map(swatch => swatch.style.backgroundColor);
+    // Get colors
+    const colors = Array.from(colorsContainer.querySelectorAll('.color-swatch'))
+        .map(swatch => swatch.style.backgroundColor);
 
-            // Validate
-            if (!name.trim()) {
-                showToast('Product name is required', 'error');
-                return;
-            }
+    // Validate
+    if (!name.trim()) {
+        showToast('Product name is required', 'error');
+        return;
+    }
 
-            if (price < 0) {
-                showToast('Price must be positive', 'error');
-                return;
-            }
+    if (price < 0) {
+        showToast('Price must be positive', 'error');
+        return;
+    }
 
-            const saveBtn = document.getElementById('save-btn');
-            saveBtn.disabled = true;
-            saveBtn.textContent = 'Saving...';
+    const saveBtn = document.getElementById('save-btn');
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving...';
 
-            try {
-                let imageUrl = null;
+    try {
+        let imageUrl = null;
 
-                // Upload image if new file selected
-                const { data, error } = await uploadImage(productImage.files[0], productId || undefined);
-if (error) {
-    // Show the real Supabase error message
-    throw new Error('Failed to upload image: ' + (error.message || JSON.stringify(error)));
-}
+        // <<< HERE is where your old uploadImage code is >>>
+        const { data, error } = await uploadImage(productImage.files[0], productId || undefined);
+        if (error) {
+            throw new Error('Failed to upload image: ' + (error.message || JSON.stringify(error)));
+        } else if (productId) {
+            const existingProduct = products.find(p => p.id === productId);
+            imageUrl = existingProduct?.image_url || null;
+        }
 
-                 else if (productId) {
-                    // Keep existing image if editing and no new file
-                    const existingProduct = products.find(p => p.id === productId);
-                    imageUrl = existingProduct?.image_url || null;
-                }
+        const productData = {
+            name: name.trim(),
+            details: details.trim() || null,
+            price,
+            colors,
+            image_url: imageUrl,
+            is_public: isPublic,
+        };
 
-                const productData = {
-                    name: name.trim(),
-                    details: details.trim() || null,
-                    price,
-                    colors,
-                    image_url: imageUrl,
-                    is_public: isPublic,
-                };
+        // ... rest of code
+
 
                 let result;
                 if (productId) {
@@ -524,6 +523,7 @@ if (error) {
     </script>
 </body>
 </html>
+
 
 
 
