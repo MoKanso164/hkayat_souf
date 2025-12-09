@@ -1,46 +1,86 @@
-// auth.js
+/**
+ * Authentication Module
+ * Handles user authentication and role checking
+ */
+
 import { getSupabase } from './config.js';
 
-// Sign in with email & password
+/**
+ * Check if current user is authenticated
+ */
+export async function isAuthenticated() {
+  const supabase = getSupabase();
+  const { data: { session } } = await supabase.auth.getSession();
+  return !!session;
+}
+
+/**
+ * Check if current user is admin
+ */
+export async function isAdmin() {
+  const supabase = getSupabase();
+  const { data: { session } } = await supabase.auth.getSession();
+  
+  if (!session) {
+    return false;
+  }
+
+  const { data, error } = await supabase
+    .from('user_roles')
+    .select('role')
+    .eq('user_id', session.user.id)
+    .eq('role', 'admin')
+    .single();
+
+  return !error && !!data;
+}
+
+/**
+ * Get current user
+ */
+export async function getCurrentUser() {
+  const supabase = getSupabase();
+  const { data: { user } } = await supabase.auth.getUser();
+  return user;
+}
+
+/**
+ * Sign in with email and password
+ */
 export async function signIn(email, password) {
   const supabase = getSupabase();
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  });
   return { data, error };
 }
 
-// Sign out
+/**
+ * Sign out
+ */
 export async function signOut() {
   const supabase = getSupabase();
   const { error } = await supabase.auth.signOut();
   return { error };
 }
 
-// Get current user reliably
-export async function getCurrentUser() {
-  const supabase = getSupabase();
-
-  // Listen to auth changes (session persisted)
-  supabase.auth.onAuthStateChange((_event, session) => {
-    // session changed; can handle auto logout if needed
-  });
-
-  // Get current session
-  const { data: { session } } = await supabase.auth.getSession();
-  return session?.user || null;
-}
-
-// Check if user is admin
-export async function isAdmin() {
-  const user = await getCurrentUser();
-  // Replace with your real admin email or a role check in Supabase
-  return user?.email === 'admin@example.com';
-}
-
-// Reset password
+/**
+ * Reset password (forgot password)
+ */
 export async function resetPassword(email) {
   const supabase = getSupabase();
   const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: `${window.location.origin}/login.html`
+    redirectTo: `${window.location.origin}/admin/login.html`,
   });
   return { data, error };
 }
+
+/**
+ * Listen to auth state changes
+ */
+export function onAuthStateChange(callback) {
+  const supabase = getSupabase();
+  return supabase.auth.onAuthStateChange(callback);
+}
+
