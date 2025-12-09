@@ -43,8 +43,11 @@
                         <th>Actions</th>
                     </tr>
                 </thead>
-                <tbody id="products-table-body" class="table-body"></tbody>
+                <tbody id="products-table-body" class="table-body">
+                    <!-- Products will be inserted here -->
+                </tbody>
             </table>
+
             <div id="pagination" class="pagination"></div>
         </div>
 
@@ -64,7 +67,7 @@
             <div class="modal-body">
                 <form id="product-form">
                     <input type="hidden" id="product-id">
-
+                    
                     <div class="form-group">
                         <label for="product-name" class="form-label required">Name</label>
                         <input type="text" id="product-name" class="form-input" required aria-required="true">
@@ -132,17 +135,41 @@
         </div>
     </div>
 
+    <script src="./config.js"></script>
     <script type="module">
-        import { initSupabase, getSupabase } from './config.js';
+        import { initSupabase } from './config.js';
         import { isAdmin, signOut, getCurrentUser } from './auth.js';
         import { getAllProducts, createProduct, updateProduct, deleteProduct } from './products.js';
         import { uploadImage, createImagePreview, revokeImagePreview, validateImageFile } from './storage.js';
         import { showToast, formatPrice } from './utils.js';
 
+        // Initialize
         await initSupabase();
-        const supabase = getSupabase();
 
-        const userEmailEl = document.getElementById('user-email');
+        // Check authentication and admin role
+        const user = await getCurrentUser();
+        if (!user) {
+            window.location.href = 'login.html';
+            throw new Error('Not authenticated');
+        }
+
+        const admin = await isAdmin();
+        if (!admin) {
+            alert('Access denied. Admin privileges required.');
+            window.location.href = 'login.html';
+            throw new Error('Not admin');
+        }
+
+        // Set user email
+        document.getElementById('user-email').textContent = user.email;
+
+        // State
+        let currentPage = 1;
+        let products = [];
+        let productToDelete = null;
+        let imagePreviewUrl = null;
+
+        // DOM Elements
         const loadingEl = document.getElementById('loading');
         const productsContainer = document.getElementById('products-container');
         const emptyState = document.getElementById('empty-state');
@@ -159,38 +186,7 @@
         const imagePreviewContainer = document.getElementById('image-preview-container');
         const imagePreview = document.getElementById('image-preview');
 
-        let currentPage = 1;
-        let products = [];
-        let productToDelete = null;
-        let imagePreviewUrl = null;
-
-        // -----------------------------
-        // AUTHENTICATION & ADMIN CHECK
-        // -----------------------------
-        async function checkAuth() {
-            const user = await getCurrentUser();
-
-            if (!user) {
-                supabase.auth.onAuthStateChange((event, session) => {
-                    if (!session) window.location.href = 'login.html';
-                });
-                setTimeout(() => window.location.href = 'login.html', 1000);
-                return null;
-            }
-
-            const admin = await isAdmin();
-            if (!admin) {
-                window.location.href = 'login.html';
-                throw new Error('Not admin');
-            }
-
-            userEmailEl.textContent = user.email;
-            return user;
-        }
-
-        // -----------------------------
-        // LOAD PRODUCTS
-        // -----------------------------
+        // Load products
         async function loadProducts() {
             loadingEl.classList.remove('hidden');
             productsContainer.classList.add('hidden');
@@ -198,14 +194,18 @@
 
             try {
                 const { data, error, count } = await getAllProducts({ page: currentPage, pageSize: 20 });
+                
                 if (error) throw error;
 
                 products = data || [];
                 renderProducts();
                 renderPagination(count || 0);
 
-                if (products.length === 0) emptyState.classList.remove('hidden');
-                else productsContainer.classList.remove('hidden');
+                if (products.length === 0) {
+                    emptyState.classList.remove('hidden');
+                } else {
+                    productsContainer.classList.remove('hidden');
+                }
             } catch (error) {
                 document.getElementById('error-message').textContent = 'Failed to load products: ' + error.message;
                 document.getElementById('error-message').classList.remove('hidden');
@@ -214,17 +214,30 @@
             }
         }
 
-        // -----------------------------
-        // RENDER PRODUCTS & PAGINATION
-        // -----------------------------
+        // Render products table
         function renderProducts() {
             productsTableBody.innerHTML = products.map(product => `
                 <tr>
-                    <td>${product.image_url ? `<img src="${product.image_url}" alt="${product.name}" style="width:50px;height:50px;object-fit:cover;border-radius:0.25rem;">` : '<div style="width:50px;height:50px;background:var(--gray-200);border-radius:0.25rem;"></div>'}</td>
+                    <td>
+                        ${product.image_url 
+                            ? `<img src="${product.image_url}" alt="${product.name}" style="width: 50px; height: 50px; object-fit: cover; border-radius: 0.25rem;">`
+                            : '<div style="width: 50px; height: 50px; background: var(--gray-200); border-radius: 0.25rem;"></div>'
+                        }
+                    </td>
                     <td><strong>${escapeHtml(product.name)}</strong></td>
                     <td>${formatPrice(product.price)}</td>
-                    <td>${(product.colors || []).map(color => `<div class="color-swatch" style="background-color:${color};" title="${color}"></div>`).join('')}</td>
-                    <td><span style="padding:0.25rem 0.5rem;border-radius:0.25rem;font-size:0.75rem;${product.is_public ? 'background:#d1fae5;color:#065f46;' : 'background:#fee2e2;color:#991b1b;'}">${product.is_public ? 'Public' : 'Draft'}</span></td>
+                    <td>
+                        <div class="color-swatches">
+                            ${(product.colors || []).map(color => 
+                                `<div class="color-swatch" style="background-color: ${color};" title="${color}"></div>`
+                            ).join('')}
+                        </div>
+                    </td>
+                    <td>
+                        <span style="padding: 0.25rem 0.5rem; border-radius: 0.25rem; font-size: 0.75rem; ${product.is_public ? 'background: #d1fae5; color: #065f46;' : 'background: #fee2e2; color: #991b1b;'}">
+                            ${product.is_public ? 'Public' : 'Draft'}
+                        </span>
+                    </td>
                     <td>
                         <div class="table-actions">
                             <button class="btn btn-secondary btn-sm" onclick="editProduct('${product.id}')">Edit</button>
@@ -235,6 +248,7 @@
             `).join('');
         }
 
+        // Render pagination
         function renderPagination(total) {
             const totalPages = Math.ceil(total / 20);
             if (totalPages <= 1) {
@@ -249,10 +263,11 @@
             `;
         }
 
-        // -----------------------------
-        // GLOBAL FUNCTIONS
-        // -----------------------------
-        window.goToPage = (page) => { currentPage = page; loadProducts(); };
+        // Global functions for onclick handlers
+        window.goToPage = (page) => {
+            currentPage = page;
+            loadProducts();
+        };
 
         window.editProduct = async (id) => {
             const product = products.find(p => p.id === id);
@@ -264,9 +279,13 @@
             document.getElementById('product-price').value = product.price;
             document.getElementById('product-is-public').checked = product.is_public;
 
+            // Set colors
             colorsContainer.innerHTML = '';
-            (product.colors || []).forEach(color => addColorSwatch(color));
+            (product.colors || []).forEach(color => {
+                addColorSwatch(color);
+            });
 
+            // Set image preview
             if (product.image_url) {
                 imagePreview.src = product.image_url;
                 imagePreviewContainer.classList.remove('hidden');
@@ -283,14 +302,33 @@
             deleteModal.classList.add('active');
         };
 
-        // -----------------------------
-        // COLOR PICKER & SWATCHES
-        // -----------------------------
-        colorPicker.addEventListener('input', e => colorText.value = e.target.value.toUpperCase());
-        colorText.addEventListener('input', e => {
-            const value = e.target.value;
-            if (/^#[0-9A-Fa-f]{6}$/.test(value)) colorPicker.value = value;
+        // Add product button
+        document.getElementById('add-product-btn').addEventListener('click', () => {
+            productForm.reset();
+            document.getElementById('product-id').value = '';
+            colorsContainer.innerHTML = '';
+            imagePreviewContainer.classList.add('hidden');
+            imagePreviewUrl = null;
+            document.getElementById('modal-title').textContent = 'Add Product';
+            productModal.classList.add('active');
         });
+
+        document.getElementById('add-first-product-btn').addEventListener('click', () => {
+            document.getElementById('add-product-btn').click();
+        });
+
+        // Color management
+        colorPicker.addEventListener('input', (e) => {
+            colorText.value = e.target.value.toUpperCase();
+        });
+
+        colorText.addEventListener('input', (e) => {
+            const value = e.target.value;
+            if (/^#[0-9A-Fa-f]{6}$/.test(value)) {
+                colorPicker.value = value;
+            }
+        });
+
         addColorBtn.addEventListener('click', () => {
             const color = colorText.value || colorPicker.value;
             if (!/^#[0-9A-Fa-f]{6}$/.test(color)) {
@@ -301,22 +339,25 @@
             colorText.value = '';
             colorPicker.value = '#000000';
         });
+
         function addColorSwatch(color) {
             const swatch = document.createElement('div');
             swatch.className = 'color-swatch';
             swatch.style.backgroundColor = color;
             swatch.title = color;
-            swatch.innerHTML = `<button type="button" onclick="this.parentElement.remove()" style="position:absolute;top:-5px;right:-5px;background:var(--danger);color:white;border:none;border-radius:50%;width:18px;height:18px;font-size:12px;cursor:pointer;display:none;">×</button>`;
+            swatch.innerHTML = `<button type="button" onclick="this.parentElement.remove()" style="position: absolute; top: -5px; right: -5px; background: var(--danger); color: white; border: none; border-radius: 50%; width: 18px; height: 18px; font-size: 12px; cursor: pointer; display: none;">×</button>`;
             swatch.style.position = 'relative';
-            swatch.addEventListener('mouseenter', () => swatch.querySelector('button').style.display = 'block');
-            swatch.addEventListener('mouseleave', () => swatch.querySelector('button').style.display = 'none');
+            swatch.addEventListener('mouseenter', () => {
+                swatch.querySelector('button').style.display = 'block';
+            });
+            swatch.addEventListener('mouseleave', () => {
+                swatch.querySelector('button').style.display = 'none';
+            });
             colorsContainer.appendChild(swatch);
         }
 
-        // -----------------------------
-        // IMAGE PREVIEW
-        // -----------------------------
-        productImage.addEventListener('change', e => {
+        // Image preview
+        productImage.addEventListener('change', (e) => {
             const file = e.target.files[0];
             if (!file) {
                 imagePreviewContainer.classList.add('hidden');
@@ -326,32 +367,43 @@
                 }
                 return;
             }
+
             const validation = validateImageFile(file);
             if (!validation.valid) {
                 showToast(validation.error, 'error');
                 e.target.value = '';
                 return;
             }
+
             imagePreviewUrl = createImagePreview(file);
             imagePreview.src = imagePreviewUrl;
             imagePreviewContainer.classList.remove('hidden');
         });
 
-        // -----------------------------
-        // PRODUCT FORM SUBMISSION
-        // -----------------------------
-        productForm.addEventListener('submit', async e => {
+        // Product form submission
+        productForm.addEventListener('submit', async (e) => {
             e.preventDefault();
 
             const productId = document.getElementById('product-id').value;
-            const name = document.getElementById('product-name').value.trim();
-            const details = document.getElementById('product-details').value.trim() || null;
+            const name = document.getElementById('product-name').value;
+            const details = document.getElementById('product-details').value;
             const price = parseFloat(document.getElementById('product-price').value);
             const isPublic = document.getElementById('product-is-public').checked;
-            const colors = Array.from(colorsContainer.querySelectorAll('.color-swatch')).map(s => s.style.backgroundColor);
 
-            if (!name) return showToast('Product name is required', 'error');
-            if (price < 0) return showToast('Price must be positive', 'error');
+            // Get colors
+            const colors = Array.from(colorsContainer.querySelectorAll('.color-swatch'))
+                .map(swatch => swatch.style.backgroundColor);
+
+            // Validate
+            if (!name.trim()) {
+                showToast('Product name is required', 'error');
+                return;
+            }
+
+            if (price < 0) {
+                showToast('Price must be positive', 'error');
+                return;
+            }
 
             const saveBtn = document.getElementById('save-btn');
             saveBtn.disabled = true;
@@ -359,18 +411,39 @@
 
             try {
                 let imageUrl = null;
+
+                // Upload image if new file selected
                 if (productImage.files[0]) {
                     const { data, error } = await uploadImage(productImage.files[0], productId || undefined);
-                    if (error) throw new Error('Failed to upload image: ' + error);
+                    if (error) {
+                        throw new Error('Failed to upload image: ' + error);
+                    }
                     imageUrl = data.url;
                 } else if (productId) {
+                    // Keep existing image if editing and no new file
                     const existingProduct = products.find(p => p.id === productId);
                     imageUrl = existingProduct?.image_url || null;
                 }
 
-                const productData = { name, details, price, colors, image_url: imageUrl, is_public: isPublic };
-                const result = productId ? await updateProduct(productId, productData) : await createProduct(productData);
-                if (result.error) throw result.error;
+                const productData = {
+                    name: name.trim(),
+                    details: details.trim() || null,
+                    price,
+                    colors,
+                    image_url: imageUrl,
+                    is_public: isPublic,
+                };
+
+                let result;
+                if (productId) {
+                    result = await updateProduct(productId, productData);
+                } else {
+                    result = await createProduct(productData);
+                }
+
+                if (result.error) {
+                    throw result.error;
+                }
 
                 showToast(`Product ${productId ? 'updated' : 'created'} successfully!`, 'success');
                 productModal.classList.remove('active');
@@ -390,14 +463,19 @@
             }
         });
 
-        // -----------------------------
-        // MODALS & DELETE
-        // -----------------------------
-        document.getElementById('modal-close').addEventListener('click', () => productModal.classList.remove('active'));
-        document.getElementById('cancel-btn').addEventListener('click', () => productModal.classList.remove('active'));
+        // Modal controls
+        document.getElementById('modal-close').addEventListener('click', () => {
+            productModal.classList.remove('active');
+        });
 
+        document.getElementById('cancel-btn').addEventListener('click', () => {
+            productModal.classList.remove('active');
+        });
+
+        // Delete modal
         document.getElementById('confirm-delete-btn').addEventListener('click', async () => {
             if (!productToDelete) return;
+
             const deleteBtn = document.getElementById('confirm-delete-btn');
             deleteBtn.disabled = true;
             deleteBtn.textContent = 'Deleting...';
@@ -405,6 +483,7 @@
             try {
                 const { error } = await deleteProduct(productToDelete);
                 if (error) throw error;
+
                 showToast('Product deleted successfully', 'success');
                 deleteModal.classList.remove('active');
                 productToDelete = null;
@@ -417,34 +496,32 @@
             }
         });
 
-        document.getElementById('delete-modal-close').addEventListener('click', () => { deleteModal.classList.remove('active'); productToDelete = null; });
-        document.getElementById('cancel-delete-btn').addEventListener('click', () => { deleteModal.classList.remove('active'); productToDelete = null; });
+        document.getElementById('delete-modal-close').addEventListener('click', () => {
+            deleteModal.classList.remove('active');
+            productToDelete = null;
+        });
 
-        // -----------------------------
-        // LOGOUT
-        // -----------------------------
+        document.getElementById('cancel-delete-btn').addEventListener('click', () => {
+            deleteModal.classList.remove('active');
+            productToDelete = null;
+        });
+
+        // Logout
         document.getElementById('logout-btn').addEventListener('click', async () => {
             await signOut();
             window.location.href = 'login.html';
         });
 
-        // -----------------------------
-        // UTILS
-        // -----------------------------
+        // Utility function
         function escapeHtml(text) {
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
         }
 
-        // -----------------------------
-        // INITIAL LOAD
-        // -----------------------------
-        (async () => {
-            await checkAuth();
-            loadProducts();
-        })();
-
+        // Initial load
+        loadProducts();
     </script>
 </body>
 </html>
+
