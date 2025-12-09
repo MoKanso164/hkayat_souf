@@ -7,23 +7,32 @@ import { getSupabase } from './config.js';
 
 /**
  * Upload image to Supabase Storage
+ * @param {File} file - The image file to upload
+ * @param {string|null} productId - Optional product ID to include in filename
+ * @returns {Promise<{data: {url: string, path: string}, error: any}>}
  */
 export async function uploadImage(file, productId = null) {
   const supabase = getSupabase();
-  
-  // Generate unique filename
+
+  // Safe filename: remove spaces & illegal characters
   const fileExt = file.name.split('.').pop();
-  const fileName = productId 
+  const safeName = file.name
+    .replace(/\s+/g, '-')                   // replace spaces with -
+    .replace(/[^a-zA-Z0-9\-_\.]/g, '');    // remove special chars
+
+  const fileName = productId
     ? `${productId}-${Date.now()}.${fileExt}`
-    : `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+    : `${Date.now()}-${Math.random().toString(36).substring(2, 10)}.${fileExt}`;
+
   const filePath = `products/${fileName}`;
 
-  // Upload file
+  // Upload file with upsert: true to avoid conflicts
   const { data, error } = await supabase.storage
     .from('product-images')
     .upload(filePath, file, {
       cacheControl: '3600',
-      upsert: false
+      upsert: true,
+      contentType: file.type
     });
 
   if (error) {
@@ -40,6 +49,8 @@ export async function uploadImage(file, productId = null) {
 
 /**
  * Create image preview from file
+ * @param {File} file - The image file
+ * @returns {string} - Blob URL for preview
  */
 export function createImagePreview(file) {
   return URL.createObjectURL(file);
@@ -47,6 +58,7 @@ export function createImagePreview(file) {
 
 /**
  * Revoke image preview URL to free memory
+ * @param {string} url - Blob URL
  */
 export function revokeImagePreview(url) {
   if (url && url.startsWith('blob:')) {
@@ -56,6 +68,8 @@ export function revokeImagePreview(url) {
 
 /**
  * Validate image file
+ * @param {File} file - The image file
+ * @returns {{valid: boolean, error?: string}}
  */
 export function validateImageFile(file) {
   const maxSize = 5 * 1024 * 1024; // 5MB
@@ -75,4 +89,3 @@ export function validateImageFile(file) {
 
   return { valid: true };
 }
-
