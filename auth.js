@@ -1,87 +1,50 @@
-/**
- * Authentication Module
- * Handles user authentication and role checking
- */
-
+// auth.js
 import { getSupabase } from './config.js';
 
 /**
- * Check if current user is authenticated
+ * Sign in user with email and password
+ * Returns { data, error }
  */
-export async function isAuthenticated() {
-  const supabase = getSupabase();
-  const { data: { session } } = await supabase.auth.getSession();
-  return !!session;
+export async function signIn(email, password) {
+    const supabase = getSupabase();
+    return await supabase.auth.signInWithPassword({ email, password });
+}
+
+/**
+ * Reset password for email
+ */
+export async function resetPassword(email) {
+    const supabase = getSupabase();
+    return await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: window.location.origin + '/login.html'
+    });
+}
+
+/**
+ * Sign out current user
+ */
+export async function signOut() {
+    const supabase = getSupabase();
+    await supabase.auth.signOut();
+}
+
+/**
+ * Get current user session and data
+ */
+export async function getCurrentUser() {
+    const supabase = getSupabase();
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return null;
+
+    const user = session.user;
+    return user;
 }
 
 /**
  * Check if current user is admin
  */
 export async function isAdmin() {
-  const supabase = getSupabase();
-  const { data: { session } } = await supabase.auth.getSession();
-  
-  if (!session) {
-    return false;
-  }
-
-  const { data, error } = await supabase
-    .from('user_roles')
-    .select('role')
-    .eq('user_id', session.user.id)
-    .eq('role', 'admin')
-    .single();
-
-  return !error && !!data;
+    const user = await getCurrentUser();
+    if (!user) return false;
+    return !!user.raw_user_meta_data?.is_admin;
 }
-
-/**
- * Get current user
- */
-export async function getCurrentUser() {
-  const supabase = getSupabase();
-  const { data: { user } } = await supabase.auth.getUser();
-  return user;
-}
-
-/**
- * Sign in with email and password
- */
-export async function signIn(email, password) {
-  const supabase = getSupabase();
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email,
-    password,
-  });
-  return { data, error };
-}
-
-/**
- * Sign out
- */
-export async function signOut() {
-  const supabase = getSupabase();
-  const { error } = await supabase.auth.signOut();
-  return { error };
-}
-
-/**
- * Reset password (forgot password)
- */
-export async function resetPassword(email) {
-  const supabase = getSupabase();
-  const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: `${window.location.origin}/admin/login.html`,
-  });
-  return { data, error };
-}
-
-/**
- * Listen to auth state changes
- */
-export function onAuthStateChange(callback) {
-  const supabase = getSupabase();
-  return supabase.auth.onAuthStateChange(callback);
-}
-
-
